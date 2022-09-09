@@ -51,6 +51,17 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Visual Studio junk
+*.tlog
+*.log
+*.recipe
+*.filters
+*.user
+*.lastbuildstate
+*.ipch
+*.suo
+*.db
+
 # VSCode Build and Run files
 launch.json
 tasks.json
