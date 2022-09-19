@@ -1,5 +1,8 @@
+#include "atomic.h"
 #include "debug.h"
 #include "heap.h"
+#include "mutex.h"
+#include "thread.h"
 #include "wm.h"
 
 #include <stdio.h>
@@ -13,6 +16,9 @@ int main(int argc, const char* argv[])
 	debug_install_exception_handler();
 
 	homework1_test();
+
+	extern void lecture7_thread_test();
+	lecture7_thread_test();
 
 	debug_set_print_mask(k_print_warning | k_print_error);
 
