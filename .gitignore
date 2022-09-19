@@ -61,7 +61,3 @@ dkms.conf
 *.ipch
 *.suo
 *.db
-
-# VSCode Build and Run files
-launch.json
-tasks.json
