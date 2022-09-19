@@ -124,6 +124,7 @@ void print_backtrace(char** stack, int size)
 		printf("[%d] %s\n", i, stack[i]);
 		VirtualFree(stack[i], 0, MEM_RELEASE);
 	}
+	VirtualFree(stack, 0, MEM_RELEASE);
 }
 
 heap_t* heap_create(size_t grow_increment)
