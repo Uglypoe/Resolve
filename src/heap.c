@@ -42,14 +42,6 @@ void print_backtrace(char** stack, int size)
 	VirtualFree(stack, 0, MEM_RELEASE);
 }
 
-void free_backtrace(char** stack, int size)
-{
-	for (int i = 0; i < size; ++i) {
-		VirtualFree(stack[i], 0, MEM_RELEASE);
-	}
-	VirtualFree(stack, 0, MEM_RELEASE);
-}
-
 void get_backtrace(callstack_t* callstack, size_t bytes)
 {
 	void* stack[MAX_STACK_DEPTH];
@@ -173,7 +165,7 @@ void heap_free(heap_t* heap, void* address)
 	tlsf_free(heap->tlsf, address);
 }
 
-static void memory_leak_walker(char* ptr, size_t size, int used, arena_t* user)
+static void memory_leak_walker(char* ptr, size_t size, int used, void* user)
 {
 	callstack_t* callstack = (callstack_t*)(ptr + size - sizeof(callstack_t));
 	if (!callstack)
@@ -195,7 +187,7 @@ void heap_destroy(heap_t* heap)
 	while (arena)
 	{
 		arena_t* next = arena->next;
-		tlsf_walk_pool(arena->pool, memory_leak_walker, arena);
+		tlsf_walk_pool(arena->pool, memory_leak_walker, NULL);
 		VirtualFree(arena, 0, MEM_RELEASE);
 		arena = next;
 	}
