@@ -15,16 +15,14 @@
 
 typedef struct callstack_t
 {
-	char** stack;
 	int size;
-	struct callstack_t* next;
+	size_t bytes;
+	char** stack;
 } callstack_t;
 
 typedef struct arena_t
 {
 	pool_t pool;
-	callstack_t* head_callstack;
-	callstack_t* tail_callstack;
 	struct arena_t* next;
 } arena_t;
 
@@ -35,7 +33,24 @@ typedef struct heap_t
 	arena_t* arena;
 } heap_t;
 
-void get_backtrace(arena_t* arena)
+void print_backtrace(char** stack, int size)
+{
+	for (int i = 0; i < size; ++i) {
+		printf("[%d] %s\n", i, stack[i]);
+		VirtualFree(stack[i], 0, MEM_RELEASE);
+	}
+	VirtualFree(stack, 0, MEM_RELEASE);
+}
+
+void free_backtrace(char** stack, int size)
+{
+	for (int i = 0; i < size; ++i) {
+		VirtualFree(stack[i], 0, MEM_RELEASE);
+	}
+	VirtualFree(stack, 0, MEM_RELEASE);
+}
+
+void get_backtrace(callstack_t* callstack, size_t bytes)
 {
 	void* stack[MAX_STACK_DEPTH];
 	char** str_stack = VirtualAlloc(NULL, MAX_STACK_DEPTH * sizeof(char*),
@@ -93,38 +108,9 @@ void get_backtrace(arena_t* arena)
 
 	SymCleanup(process);
 
-	callstack_t* callstack = VirtualAlloc(NULL, sizeof(callstack_t),
-		MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	if (!callstack)
-	{
-		debug_print(
-			k_print_error,
-			"OUT OF MEMORY!\n");
-		return;
-	}
-
 	callstack->stack = str_stack;
 	callstack->size = i + 1;
-
-	if (!arena->head_callstack)
-	{
-		arena->head_callstack = callstack;
-		arena->tail_callstack = callstack;
-	}
-	else
-	{
-		arena->tail_callstack->next = callstack;
-		arena->tail_callstack = callstack;
-	}
-}
-
-void print_backtrace(char** stack, int size)
-{
-	for (int i = 0; i < size; ++i) {
-		printf("[%d] %s\n", i, stack[i]);
-		VirtualFree(stack[i], 0, MEM_RELEASE);
-	}
-	VirtualFree(stack, 0, MEM_RELEASE);
+	callstack->bytes = bytes;
 }
 
 heap_t* heap_create(size_t grow_increment)
@@ -148,11 +134,14 @@ heap_t* heap_create(size_t grow_increment)
 
 void* heap_alloc(heap_t* heap, size_t size, size_t alignment)
 {
-	void* address = tlsf_memalign(heap->tlsf, alignment, size);
+	size_t padding = alignment - (size % alignment);
+	size_t padded_size = size + padding;
+
+	void* address = tlsf_memalign(heap->tlsf, alignment, padded_size + sizeof(callstack_t));
 	if (!address)
 	{
 		size_t arena_size =
-			__max(heap->grow_increment, size * 2) +
+			__max(heap->grow_increment, padded_size * 2) +
 			sizeof(arena_t);
 		arena_t* arena = VirtualAlloc(NULL,
 			arena_size + tlsf_pool_overhead(),
@@ -170,10 +159,11 @@ void* heap_alloc(heap_t* heap, size_t size, size_t alignment)
 		arena->next = heap->arena;
 		heap->arena = arena;
 
-		address = tlsf_memalign(heap->tlsf, alignment, size);
+		address = tlsf_memalign(heap->tlsf, alignment, padded_size + sizeof(callstack_t));
 	}
 
-	get_backtrace(heap->arena);
+	callstack_t* callstack = (callstack_t*)((char*)address + padded_size);
+	get_backtrace(callstack, size);
 
 	return address;
 }
@@ -183,20 +173,18 @@ void heap_free(heap_t* heap, void* address)
 	tlsf_free(heap->tlsf, address);
 }
 
-void memory_leak_walker(void* ptr, size_t size, int used, arena_t* user)
+static void memory_leak_walker(char* ptr, size_t size, int used, arena_t* user)
 {
-	callstack_t* callstack = user->head_callstack;
+	callstack_t* callstack = (callstack_t*)(ptr + size - sizeof(callstack_t));
 	if (!callstack)
 	{
 		return;
 	}
 	if (used)
 	{
-		printf("Memory leak of size %zu bytes with callstack:\n", size);
+		printf("Memory leak of size %zu bytes with callstack:\n", callstack->bytes);
 		print_backtrace(callstack->stack, callstack->size);
 	}
-	user->head_callstack = callstack->next;
-	VirtualFree(callstack, 0, MEM_RELEASE);
 }
 
 void heap_destroy(heap_t* heap)
