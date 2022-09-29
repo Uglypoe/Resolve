@@ -4,6 +4,9 @@
 #include "heap.h"
 #include "queue.h"
 #include "thread.h"
+#include "lz4/lz4.h"
+#include "debug.h"
+#include "stdio.h"
 
 #include <string.h>
 
@@ -15,6 +18,8 @@ typedef struct fs_t
 	heap_t* heap;
 	queue_t* file_queue;
 	thread_t* file_thread;
+	queue_t* compression_queue;
+	thread_t* compression_thread;
 } fs_t;
 
 typedef enum fs_work_op_t
@@ -25,6 +30,7 @@ typedef enum fs_work_op_t
 
 typedef struct fs_work_t
 {
+	fs_t* fs;
 	heap_t* heap;
 	fs_work_op_t op;
 	char path[1024];
@@ -37,6 +43,7 @@ typedef struct fs_work_t
 } fs_work_t;
 
 static int file_thread_func(void* user);
+static int compression_thread_func(void* user);
 
 fs_t* fs_create(heap_t* heap, int queue_capacity)
 {
@@ -44,6 +51,8 @@ fs_t* fs_create(heap_t* heap, int queue_capacity)
 	fs->heap = heap;
 	fs->file_queue = queue_create(heap, queue_capacity);
 	fs->file_thread = thread_create(file_thread_func, fs);
+	fs->compression_queue = queue_create(heap, queue_capacity);
+	fs->compression_thread = thread_create(compression_thread_func, fs);
 	return fs;
 }
 
@@ -52,12 +61,16 @@ void fs_destroy(fs_t* fs)
 	queue_push(fs->file_queue, NULL);
 	thread_destroy(fs->file_thread);
 	queue_destroy(fs->file_queue);
+	queue_push(fs->compression_queue, NULL);
+	thread_destroy(fs->compression_thread);
+	queue_destroy(fs->compression_queue);
 	heap_free(fs->heap, fs);
 }
 
 fs_work_t* fs_read(fs_t* fs, const char* path, heap_t* heap, bool null_terminate, bool use_compression)
 {
 	fs_work_t* work = heap_alloc(fs->heap, sizeof(fs_work_t), 8);
+	work->fs = fs;
 	work->heap = heap;
 	work->op = k_fs_work_op_read;
 	strcpy_s(work->path, sizeof(work->path), path);
@@ -74,6 +87,7 @@ fs_work_t* fs_read(fs_t* fs, const char* path, heap_t* heap, bool null_terminate
 fs_work_t* fs_write(fs_t* fs, const char* path, const void* buffer, size_t size, bool use_compression)
 {
 	fs_work_t* work = heap_alloc(fs->heap, sizeof(fs_work_t), 8);
+	work->fs = fs;
 	work->heap = fs->heap;
 	work->op = k_fs_work_op_write;
 	strcpy_s(work->path, sizeof(work->path), path);
@@ -87,6 +101,7 @@ fs_work_t* fs_write(fs_t* fs, const char* path, const void* buffer, size_t size,
 	if (use_compression)
 	{
 		// HOMEWORK 2: Queue file write work on compression queue!
+		queue_push(fs->compression_queue, work);
 	}
 	else
 	{
@@ -133,6 +148,10 @@ void fs_work_destroy(fs_work_t* work)
 	{
 		event_wait(work->done);
 		event_destroy(work->done);
+		if (work->use_compression && work->op == k_fs_work_op_write)
+		{
+			heap_free(work->heap, work->buffer);
+		}
 		heap_free(work->heap, work);
 	}
 }
@@ -182,6 +201,7 @@ static void file_read(fs_work_t* work)
 	if (work->use_compression)
 	{
 		// HOMEWORK 2: Queue file read work on decompression queue!
+		queue_push(work->fs->compression_queue, work);
 	}
 	else
 	{
@@ -231,7 +251,7 @@ static int file_thread_func(void* user)
 		{
 			break;
 		}
-		
+
 		switch (work->op)
 		{
 		case k_fs_work_op_read:
@@ -240,6 +260,74 @@ static int file_thread_func(void* user)
 		case k_fs_work_op_write:
 			file_write(work);
 			break;
+		}
+	}
+	return 0;
+}
+
+static int compression_thread_func(void* user)
+{
+	fs_t* fs = user;
+	while (true)
+	{
+		fs_work_t* work = queue_pop(fs->compression_queue);
+		if (work == NULL)
+		{
+			break;
+		}
+
+		switch (work->op)
+		{
+		case k_fs_work_op_read:
+			{
+				int decompressed_size = atoi(work->buffer); // Stops at the newline
+				int metadata_len = snprintf(NULL, 0, "%d\n", decompressed_size);
+
+				char* compressed_buffer = (char*)work->buffer + metadata_len;
+				char* decompressed_buffer = heap_alloc(work->heap, decompressed_size + (work->null_terminate ? 1 : 0), 8);
+
+				int bytes_written = LZ4_decompress_safe(compressed_buffer, decompressed_buffer, (int)work->size - metadata_len, decompressed_size);
+				if (bytes_written > 0)
+				{
+					heap_free(work->heap, work->buffer);
+					work->buffer = decompressed_buffer;
+					work->size = bytes_written;
+					if (work->null_terminate)
+					{
+						((char*)work->buffer)[bytes_written] = 0;
+					}
+				}
+				else
+				{
+					debug_print(k_print_error, "There was an issue decompressing a file\n");
+				}
+
+				event_signal(work->done);
+				break;
+			}
+		case k_fs_work_op_write:
+			{
+				int metadata_len = snprintf(NULL, 0, "%d\n", (int)work->size);
+
+				int compressed_max_size = LZ4_compressBound((int)work->size);
+				char* compressed_buffer = heap_alloc(work->heap, compressed_max_size + metadata_len, 8);
+
+				snprintf(compressed_buffer, metadata_len + 1, "%d\n", (int)work->size);
+
+				int bytes_written = LZ4_compress_default(work->buffer, compressed_buffer + metadata_len, (int)work->size, compressed_max_size);
+				if (bytes_written > 0)
+				{
+					work->buffer = compressed_buffer;
+					work->size = bytes_written + metadata_len;
+				}
+				else
+				{
+					debug_print(k_print_error, "There was an issue compressing a file\n");
+				}
+
+				queue_push(fs->file_queue, work);
+				break;
+			}
 		}
 	}
 	return 0;
