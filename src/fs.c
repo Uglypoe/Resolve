@@ -78,6 +78,8 @@ fs_work_t* fs_read(fs_t* fs, const char* path, heap_t* heap, bool null_terminate
 	strcpy_s(work->path, sizeof(work->path), path);
 	work->buffer = NULL;
 	work->size = 0;
+	work->temp_buffer = NULL;
+	work->temp_size = 0;
 	work->done = event_create();
 	work->result = 0;
 	work->null_terminate = null_terminate;
@@ -95,6 +97,8 @@ fs_work_t* fs_write(fs_t* fs, const char* path, const void* buffer, size_t size,
 	strcpy_s(work->path, sizeof(work->path), path);
 	work->buffer = (void*)buffer;
 	work->size = size;
+	work->temp_buffer = NULL;
+	work->temp_size = 0;
 	work->done = event_create();
 	work->result = 0;
 	work->null_terminate = false;
