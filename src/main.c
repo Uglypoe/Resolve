@@ -84,7 +84,7 @@ static void homework2_test_internal(heap_t* heap, fs_t* fs, bool use_compression
 	fs_work_t* read_work = fs_read(fs, "foo.bar", heap, true, use_compression);
 
 	assert(fs_work_get_result(write_work) == 0);
-	//assert(fs_work_get_size(write_work) == huck_finn_len);
+	assert(fs_work_get_size(write_work) == huck_finn_len);
 
 	char* read_data = fs_work_get_buffer(read_work);
 	assert(read_data && strcmp(read_data, huck_finn) == 0);

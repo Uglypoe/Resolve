@@ -38,6 +38,8 @@ typedef struct fs_work_t
 	bool use_compression;
 	void* buffer;
 	size_t size;
+	void* temp_buffer;
+	size_t temp_size;
 	event_t* done;
 	int result;
 } fs_work_t;
@@ -148,9 +150,9 @@ void fs_work_destroy(fs_work_t* work)
 	{
 		event_wait(work->done);
 		event_destroy(work->done);
-		if (work->use_compression && work->op == k_fs_work_op_write)
+		if (work->use_compression)
 		{
-			heap_free(work->heap, work->buffer);
+			heap_free(work->heap, work->temp_buffer);
 		}
 		heap_free(work->heap, work);
 	}
@@ -226,15 +228,25 @@ static void file_write(fs_work_t* work)
 		return;
 	}
 
+	void* buffer = (work->use_compression ? work->temp_buffer : work->buffer);
+	size_t size = (work->use_compression ? work->temp_size : work->size);
+
 	DWORD bytes_written = 0;
-	if (!WriteFile(handle, work->buffer, (DWORD)work->size, &bytes_written, NULL))
+	if (!WriteFile(handle, buffer, (DWORD)size, &bytes_written, NULL))
 	{
 		work->result = GetLastError();
 		CloseHandle(handle);
 		return;
 	}
 
-	work->size = bytes_written;
+	if (work->use_compression)
+	{
+		work->temp_size = bytes_written;
+	}
+	else
+	{
+		work->size = bytes_written;
+	}
 
 	CloseHandle(handle);
 
@@ -280,16 +292,18 @@ static int compression_thread_func(void* user)
 		{
 		case k_fs_work_op_read:
 			{
-				int decompressed_size = atoi(work->buffer); // Stops at the newline
+				work->temp_buffer = work->buffer;
+				work->temp_size = work->size;
+
+				int decompressed_size = atoi(work->temp_buffer); // Stops at the newline
 				int metadata_len = snprintf(NULL, 0, "%d\n", decompressed_size);
 
-				char* compressed_buffer = (char*)work->buffer + metadata_len;
+				char* compressed_buffer = (char*)work->temp_buffer + metadata_len;
 				char* decompressed_buffer = heap_alloc(work->heap, decompressed_size + (work->null_terminate ? 1 : 0), 8);
 
-				int bytes_written = LZ4_decompress_safe(compressed_buffer, decompressed_buffer, (int)work->size - metadata_len, decompressed_size);
+				int bytes_written = LZ4_decompress_safe(compressed_buffer, decompressed_buffer, (int)work->temp_size - metadata_len, decompressed_size);
 				if (bytes_written > 0)
 				{
-					heap_free(work->heap, work->buffer);
 					work->buffer = decompressed_buffer;
 					work->size = bytes_written;
 					if (work->null_terminate)
@@ -317,8 +331,8 @@ static int compression_thread_func(void* user)
 				int bytes_written = LZ4_compress_default(work->buffer, compressed_buffer + metadata_len, (int)work->size, compressed_max_size);
 				if (bytes_written > 0)
 				{
-					work->buffer = compressed_buffer;
-					work->size = bytes_written + metadata_len;
+					work->temp_buffer = compressed_buffer;
+					work->temp_size = bytes_written + metadata_len;
 				}
 				else
 				{
