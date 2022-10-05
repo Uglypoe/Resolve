@@ -168,6 +168,7 @@ static void file_read(fs_work_t* work)
 	if (MultiByteToWideChar(CP_UTF8, 0, work->path, -1, wide_path, sizeof(wide_path)) <= 0)
 	{
 		work->result = -1;
+		event_signal(work->done);
 		return;
 	}
 
@@ -176,6 +177,7 @@ static void file_read(fs_work_t* work)
 	if (handle == INVALID_HANDLE_VALUE)
 	{
 		work->result = GetLastError();
+		event_signal(work->done);
 		return;
 	}
 
@@ -183,6 +185,7 @@ static void file_read(fs_work_t* work)
 	{
 		work->result = GetLastError();
 		CloseHandle(handle);
+		event_signal(work->done);
 		return;
 	}
 
@@ -193,6 +196,7 @@ static void file_read(fs_work_t* work)
 	{
 		work->result = GetLastError();
 		CloseHandle(handle);
+		event_signal(work->done);
 		return;
 	}
 
@@ -215,12 +219,19 @@ static void file_read(fs_work_t* work)
 	}
 }
 
+int get_hash(void* address, int bucket_count)
+{
+	return (intptr_t)address % bucket_count;
+}
+
+
 static void file_write(fs_work_t* work)
 {
 	wchar_t wide_path[1024];
 	if (MultiByteToWideChar(CP_UTF8, 0, work->path, -1, wide_path, sizeof(wide_path)) <= 0)
 	{
 		work->result = -1;
+		event_signal(work->done);
 		return;
 	}
 
@@ -229,6 +240,7 @@ static void file_write(fs_work_t* work)
 	if (handle == INVALID_HANDLE_VALUE)
 	{
 		work->result = GetLastError();
+		event_signal(work->done);
 		return;
 	}
 
@@ -240,6 +252,7 @@ static void file_write(fs_work_t* work)
 	{
 		work->result = GetLastError();
 		CloseHandle(handle);
+		event_signal(work->done);
 		return;
 	}
 
