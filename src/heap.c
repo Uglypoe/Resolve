@@ -14,13 +14,6 @@
 #define FUNCTION_NAME_LENGTH 64
 #define MAX_STACK_DEPTH 16
 
-typedef struct callstack_t
-{
-	int size;
-	size_t bytes;
-	char** stack;
-} callstack_t;
-
 typedef struct arena_t
 {
 	pool_t pool;
@@ -35,21 +28,11 @@ typedef struct heap_t
 	mutex_t* mutex;
 } heap_t;
 
-void print_backtrace(char** stack, int size)
+void print_backtrace(DWORD64* stack)
 {
-	for (int i = 0; i < size; ++i) {
-		printf("[%d] %s\n", i, stack[i]);
-		VirtualFree(stack[i], 0, MEM_RELEASE);
-	}
-	VirtualFree(stack, 0, MEM_RELEASE);
-}
-
-void get_backtrace(callstack_t* callstack, size_t bytes)
-{
-	void* stack[MAX_STACK_DEPTH];
-	char** str_stack = VirtualAlloc(NULL, MAX_STACK_DEPTH * sizeof(char*),
-		MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE); 
-	if (!str_stack)
+	char* fn_name = VirtualAlloc(NULL, FUNCTION_NAME_LENGTH * sizeof(char),
+		MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	if (!fn_name)
 	{
 		debug_print(
 			k_print_error,
@@ -64,34 +47,21 @@ void get_backtrace(callstack_t* callstack, size_t bytes)
 		printf("SymInitialize returned error : %d\n", error);
 	}
 
-	WORD callstack_size = CaptureStackBackTrace(2, MAX_STACK_DEPTH, stack, NULL);
-
 	char buf[sizeof(SYMBOL_INFO) + (FUNCTION_NAME_LENGTH + 1) * sizeof(TCHAR)];
 	SYMBOL_INFO* symbol = (SYMBOL_INFO*)buf;
 	symbol->MaxNameLen = FUNCTION_NAME_LENGTH;
 	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
 
-	int i;
-	for (i = 0; i < callstack_size; ++i) {
-		str_stack[i] = VirtualAlloc(NULL, FUNCTION_NAME_LENGTH * sizeof(char),
-			MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-		if (!str_stack[i])
+	int i = 0;
+	for (i = 0; i < MAX_STACK_DEPTH; ++i) {
+		DWORD64* address = (DWORD64*)(stack + i);
+		if (SymFromAddr(process, *address, 0, symbol))
 		{
-			debug_print(
-				k_print_error,
-				"OUT OF MEMORY!\n");
-			return;
-		}
-
-		DWORD64 address = (DWORD64)(stack[i]);
-		if (SymFromAddr(process, address, 0, symbol))
-		{
-			sprintf_s(str_stack[i], FUNCTION_NAME_LENGTH, "%s", symbol->Name);
+			printf("[%d] %s\n", i, symbol->Name);
 		}
 		else
 		{
-			DWORD error = GetLastError();
-			sprintf_s(str_stack[i], FUNCTION_NAME_LENGTH, "(SymFromAddr failed with error %d)", error);
+			break;
 		}
 
 		if (strcmp(symbol->Name, "main") == 0)
@@ -102,9 +72,7 @@ void get_backtrace(callstack_t* callstack, size_t bytes)
 
 	SymCleanup(process);
 
-	callstack->stack = str_stack;
-	callstack->size = i + 1;
-	callstack->bytes = bytes;
+	VirtualFree(fn_name, 0, MEM_RELEASE);
 }
 
 heap_t* heap_create(size_t grow_increment)
@@ -133,7 +101,7 @@ void* heap_alloc(heap_t* heap, size_t size, size_t alignment)
 
 	size_t padding = alignment - (size % alignment);
 	size_t padded_size = size + padding;
-	void* address = tlsf_memalign(heap->tlsf, alignment, padded_size + sizeof(callstack_t));
+	void* address = tlsf_memalign(heap->tlsf, alignment, padded_size + MAX_STACK_DEPTH * sizeof(void*));
 	if (!address)
 	{
 		size_t arena_size =
@@ -155,11 +123,14 @@ void* heap_alloc(heap_t* heap, size_t size, size_t alignment)
 		arena->next = heap->arena;
 		heap->arena = arena;
 
-		address = tlsf_memalign(heap->tlsf, alignment, padded_size + sizeof(callstack_t));
+		address = tlsf_memalign(heap->tlsf, alignment, padded_size + MAX_STACK_DEPTH * sizeof(void*));
 	}
 
-	callstack_t* callstack = (callstack_t*)((char*)address + padded_size);
-	get_backtrace(callstack, size);
+	if (address)
+	{
+		void* stack = (void*)((char*)address + padded_size);
+		CaptureStackBackTrace(2, MAX_STACK_DEPTH, stack, NULL);
+	}
 	
 	mutex_unlock(heap->mutex);
 
@@ -175,15 +146,15 @@ void heap_free(heap_t* heap, void* address)
 
 static void memory_leak_walker(char* ptr, size_t size, int used, void* user)
 {
-	callstack_t* callstack = (callstack_t*)(ptr + size - sizeof(callstack_t));
-	if (!callstack)
-	{
-		return;
-	}
 	if (used)
 	{
-		printf("Memory leak of size %zu bytes with callstack:\n", callstack->bytes);
-		print_backtrace(callstack->stack, callstack->size);
+		void* callstack = (void*)(ptr + size - (MAX_STACK_DEPTH * sizeof(void*)));
+		if (!callstack)
+		{
+			return;
+		}
+		printf("Memory leak of size %zu bytes with callstack:\n", size);
+		print_backtrace(callstack);
 	}
 }
 
