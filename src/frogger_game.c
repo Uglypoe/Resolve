@@ -98,20 +98,20 @@ typedef struct car_data {
 struct car_data all_cars[] = {
 	{0.25f, 0.0f, 2.5f, 1.5f, false},
 	{1.0f, 0.0f, 2.5f, 1.5f, false},
-	{0.0f, 1.1f, 1.5f, 2.5f, true},
+	{0.0f, 1.0f, 1.5f, 2.5f, true},
 
-	{0.0f, 3.75f, 2.0f, 1.5f, false},
-	{0.45f, 3.75f, 2.0f, 2.0f, false},
-	{0.0f, 4.85f, 3.0f, 3.0f, true},
-	{0.3f, 4.85f, 3.0f, 3.0f, true},
+	{0.0f, 3.5f, 2.0f, 1.5f, false},
+	{0.45f, 3.5f, 2.0f, 2.0f, false},
+	{0.0f, 4.5f, 3.0f, 3.0f, true},
+	{0.3f, 4.5f, 3.0f, 3.0f, true},
 
-	{0.0f, 7.5f, 2.0f, 1.5f, false},
-	{0.45f, 7.5f, 2.0f, 2.0f, false},
-	{0.8f, 7.5f, 2.0f, 1.5f, false},
-	{0.0f, 8.6f, 3.0f, 2.5f, true},
-	{0.3f, 8.6f, 3.0f, 2.5f, true},
-	{0.25f, 9.7f, 2.0f, 2.5f, true},
-	{0.65f, 9.7f, 2.0f, 2.5f, true},
+	{0.1f, 7.0f, 2.5f, 1.5f, false},
+	{0.5f, 7.0f, 2.5f, 2.0f, false},
+	{0.8f, 7.0f, 2.5f, 1.5f, false},
+	{0.15f, 8.0f, 3.25f, 2.5f, true},
+	{0.45f, 8.0f, 3.25f, 2.5f, true},
+	{0.25f, 9.0f, 2.0f, 2.5f, true},
+	{0.65f, 9.0f, 2.0f, 2.5f, true},
 };
 
 frogger_game_t* frogger_game_create(heap_t* heap, fs_t* fs, wm_window_t* window, render_t* render)
@@ -282,7 +282,7 @@ static void spawn_traffic(frogger_game_t* game, int index)
 
 	transform_component_t* transform_comp = ecs_entity_get_component(game->ecs, game->traffic_ent, game->transform_type, true);
 	transform_identity(&transform_comp->transform);
-	transform_comp->transform.translation.z = game->bound_bottom - 4 - init_data.row * 2.0f;
+	transform_comp->transform.translation.z = game->bound_bottom - 4 - init_data.row * 2.1f;
 	transform_comp->transform.scale.y = init_data.size;
 
 	traffic_component_t* traffic_comp = ecs_entity_get_component(game->ecs, game->traffic_ent, game->traffic_type, true);

@@ -219,7 +219,7 @@ void mat4f_make_perspective(mat4f_t* m, float angle, float aspect, float z_near,
 	m->data[3][3] = 0.0f;
 }
 
-void mat4f_make_orthographic(mat4f_t* m, float left, float right, float top, float bottom, float near, float far)
+void mat4f_make_orthographic(mat4f_t* m, float left, float right, float bottom, float top, float near, float far)
 {
 	m->data[0][0] = 2.0f / (right - left);
 	m->data[0][1] = 0.0f;
@@ -227,7 +227,7 @@ void mat4f_make_orthographic(mat4f_t* m, float left, float right, float top, flo
 	m->data[0][3] = 0.0f;
 
 	m->data[1][0] = 0.0f;
-	m->data[1][1] = 2.0f / (top - bottom);
+	m->data[1][1] = 2.0f / -(top - bottom);
 	m->data[1][2] = 0.0f;
 	m->data[1][3] = 0.0f;
 
@@ -237,7 +237,7 @@ void mat4f_make_orthographic(mat4f_t* m, float left, float right, float top, flo
 	m->data[2][3] = 0.0f;
 
 	m->data[3][0] = -(right + left) / (right - left);
-	m->data[3][1] = -(top + bottom) / (top - bottom);
+	m->data[3][1] = (top + bottom) / (top - bottom);
 	m->data[3][2] = (far + near) / (far - near);
 	m->data[3][3] = 1.0f;
 }
