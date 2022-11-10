@@ -1,8 +1,9 @@
 #include "debug.h"
 #include "fs.h"
 #include "heap.h"
-#include "net.h"
 #include "render.h"
+#include "net.h"
+#include "simple_game.h"
 #include "frogger_game.h"
 #include "timer.h"
 #include "wm.h"
@@ -19,6 +20,7 @@ int main(int argc, const char* argv[])
 	wm_window_t* window = wm_create(heap);
 	render_t* render = render_create(heap, window);
 
+	simple_game_t* game = simple_game_create(heap, fs, window, render, argc, argv);
 	int port = 12345;
 	if (argc >= 2)
 	{
@@ -30,6 +32,7 @@ int main(int argc, const char* argv[])
 
 	while (!wm_pump(window))
 	{
+		simple_game_update(game);
 		net_update(net);
 		frogger_game_update(game);
 	}
@@ -39,7 +42,6 @@ int main(int argc, const char* argv[])
 
 	frogger_game_destroy(game);
 
-	net_destroy(net);
 	wm_destroy(window);
 	fs_destroy(fs);
 	heap_destroy(heap);
