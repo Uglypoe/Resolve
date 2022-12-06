@@ -2,10 +2,11 @@
 #include "fs.h"
 #include "heap.h"
 #include "render.h"
-#include "simple_game.h"
-#include "frogger_game.h"
+//#include "simple_game.h"
+//#include "frogger_game.h"
 #include "timer.h"
 #include "wm.h"
+#include "lua_interface.h"
 
 int main(int argc, const char* argv[])
 {
@@ -20,19 +21,22 @@ int main(int argc, const char* argv[])
 	render_t* render = render_create(heap, window);
 
 	//simple_game_t* game = simple_game_create(heap, fs, window, render, argc, argv);
-	frogger_game_t* game = frogger_game_create(heap, fs, window, render);
+	//frogger_game_t* game = frogger_game_create(heap, fs, window, render);
+	lua_project_t* lp = lua_project_create("./LuaGame", heap, fs, window, render);
 
 	while (!wm_pump(window))
 	{
 		//simple_game_update(game);
-		frogger_game_update(game);
+		//frogger_game_update(game);
+		lua_project_update(lp);
 	}
 
 	/* XXX: Shutdown render before the game. Render uses game resources. */
 	render_destroy(render);
 
 	//simple_game_destroy(game);
-	frogger_game_destroy(game);
+	//frogger_game_destroy(game);
+	lua_project_destroy(lp);
 
 	wm_destroy(window);
 	fs_destroy(fs);
